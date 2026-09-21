@@ -3,7 +3,34 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: '/api',
   timeout: 300000,
+  withCredentials: true,
 })
+
+// ==================== 鉴权 ====================
+
+export function login(username, password) {
+  return api.post('/auth/login', { username, password })
+}
+
+export function logout() {
+  return api.post('/auth/logout')
+}
+
+export function fetchMe() {
+  return api.get('/auth/me')
+}
+
+// ==================== 识别历史 ====================
+
+export function fetchHistory() {
+  return api.get('/history')
+}
+
+export function getHistoryResult(jobId) {
+  return api.get(`/history/${jobId}/result`)
+}
+
+// ==================== 任务 ====================
 
 export function uploadVideo(file) {
   const formData = new FormData()
@@ -18,7 +45,9 @@ export function getJobResult(jobId) {
 }
 
 export function connectSSE(jobId, onMessage, onError) {
-  const eventSource = new EventSource(`/api/jobs/${jobId}/progress`)
+  const eventSource = new EventSource(`/api/jobs/${jobId}/progress`, {
+    withCredentials: true,
+  })
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
@@ -47,6 +76,13 @@ export function getOriginalVideoUrl(jobId) {
 
 export function getExportExcelUrl(jobId) {
   return `/api/jobs/${jobId}/export`
+}
+
+/** 用前端编辑后的情感数据导出 Excel */
+export function exportExcelWithEdits(jobId, payload) {
+  return api.post(`/jobs/${jobId}/export`, payload, {
+    responseType: 'blob',
+  })
 }
 
 // ==================== 实时识别 WebSocket ====================

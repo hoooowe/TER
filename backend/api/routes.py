@@ -13,10 +13,20 @@ from pathlib import Path
 import cv2
 import numpy as np
 import soundfile as sf
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request, WebSocket, WebSocketDisconnect, Depends, Response
 from fastapi.responses import StreamingResponse, FileResponse
 
-from api.schemas import JobStatus, JobResult
+from api.schemas import (
+    JobStatus,
+    JobResult,
+    ExportRequest,
+    ExportSegment,
+    LoginRequest,
+    AuthUserOut,
+    HistoryItem,
+)
+from core.auth import AuthUser, get_auth_store, require_user
+from core import history as history_store
 from core.face_recognizer import get_face_recognizer
 from tasks.manager import JobManager, run_processing_job
 
@@ -27,8 +37,10 @@ router = APIRouter()
 BASE_DIR = Path(__file__).parent.parent
 UPLOADS_DIR = BASE_DIR / "storage" / "uploads"
 JOBS_DIR = BASE_DIR / "storage" / "jobs"
+STORAGE_DIR = BASE_DIR / "storage"
 
 job_manager = JobManager(JOBS_DIR)
+auth_store = get_auth_store(STORAGE_DIR)
 
 # 线程池用于模型推理
 thread_pool = ThreadPoolExecutor(max_workers=4)
@@ -42,20 +54,84 @@ SILENCE_RMS_THRESHOLD = 0.03  # 静音检测阈值（RMS 能量），低于此�
 ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv"}
 
 
+def _check_job_access(job_id: str, user: AuthUser) -> None:
+    try:
+        job_manager.assert_owner(job_id, user.user_id)
+    except KeyError:
+        raise HTTPException(404, "Job not found")
+    except PermissionError:
+        raise HTTPException(403, "无权访问该识别记录")
+
+
+# ==================== 鉴权（仅登录，不提供注册） ====================
+
+
+def _client_ip(request: Request) -> str:
+    """优先取反向代理传递的真实客户端 IP。"""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip() or "unknown"
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+@router.post("/auth/login", response_model=AuthUserOut)
+async def auth_login(payload: LoginRequest, request: Request, response: Response):
+    user = auth_store.login(payload.username, payload.password, client_ip=_client_ip(request))
+    token = auth_store.create_token(user)
+    auth_store.set_auth_cookie(response, token)
+    return AuthUserOut(user_id=user.user_id, username=user.username)
+
+
+@router.post("/auth/logout")
+async def auth_logout(response: Response):
+    auth_store.clear_auth_cookie(response)
+    return {"ok": True}
+
+
+@router.get("/auth/me", response_model=AuthUserOut)
+async def auth_me(user: AuthUser = Depends(require_user)):
+    return AuthUserOut(user_id=user.user_id, username=user.username)
+
+
+# ==================== 识别历史 ====================
+
+
+@router.get("/history", response_model=list[HistoryItem])
+async def get_history(user: AuthUser = Depends(require_user)):
+    return history_store.list_history(JOBS_DIR, user.user_id)
+
+
+@router.get("/history/{job_id}/result", response_model=JobResult)
+async def history_result(job_id: str, user: AuthUser = Depends(require_user)):
+    _check_job_access(job_id, user)
+    result = job_manager.get_result(job_id)
+    if result is None:
+        status = job_manager.get_status(job_id)
+        if status is not None and status.status == "failed":
+            raise HTTPException(500, f"Job failed: {status.message}")
+        raise HTTPException(404, "识别结果不存在")
+    return result
+
+
+# ==================== 上传与任务 ====================
+
+
 @router.post("/upload", response_model=JobStatus)
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(file: UploadFile = File(...), user: AuthUser = Depends(require_user)):
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Unsupported file format: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
 
     # Save uploaded file
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    save_path = UPLOADS_DIR / file.filename
+    save_path = UPLOADS_DIR / f"{user.user_id}_{file.filename}"
     content = await file.read()
     save_path.write_bytes(content)
 
     # Create job
-    job_id = job_manager.create_job(str(save_path), file.filename)
+    job_id = job_manager.create_job(str(save_path), file.filename, user_id=user.user_id)
 
     # Start background processing
     thread = threading.Thread(
@@ -69,20 +145,30 @@ async def upload_video(file: UploadFile = File(...)):
 
 
 @router.get("/jobs/{job_id}/progress")
-async def job_progress(job_id: str, request: Request):
+async def job_progress(job_id: str, request: Request, user: AuthUser = Depends(require_user)):
+    _check_job_access(job_id, user)
     status = job_manager.get_status(job_id)
-    if status is None:
+    snapshot = job_manager.get_sse_snapshot(job_id)
+    if status is None and snapshot is None:
         raise HTTPException(404, "Job not found")
 
-    if status.status in ("done", "failed"):
+    # 已结束：单次下发快照（含完整/部分片段）
+    if status is not None and status.status in ("done", "failed"):
+        payload = snapshot or status.model_dump()
+
         async def single_event():
-            yield f"data: {json.dumps(status.model_dump())}\n\n"
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         return StreamingResponse(single_event(), media_type="text/event-stream")
 
     q = job_manager.subscribe_sse(job_id)
 
     async def event_generator():
         try:
+            # 订阅后先推当前进度与已识别片段，刷新页面不丢结果
+            if snapshot is not None:
+                yield f"data: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
+                if snapshot.get("status") in ("done", "failed"):
+                    return
             while True:
                 if await request.is_disconnected():
                     break
@@ -90,7 +176,7 @@ async def job_progress(job_id: str, request: Request):
                     data = await asyncio.to_thread(q.get, timeout=30)
                     yield f"data: {data}\n\n"
                     parsed = json.loads(data)
-                    if parsed.get("status") in ("done", "failed"):
+                    if parsed.get("status") in ("done", "failed") or parsed.get("event") in ("done", "failed"):
                         break
                 except Exception:
                     yield ": keepalive\n\n"
@@ -101,7 +187,8 @@ async def job_progress(job_id: str, request: Request):
 
 
 @router.get("/jobs/{job_id}/result", response_model=JobResult)
-async def job_result(job_id: str):
+async def job_result(job_id: str, user: AuthUser = Depends(require_user)):
+    _check_job_access(job_id, user)
     result = job_manager.get_result(job_id)
     if result is None:
         status = job_manager.get_status(job_id)
@@ -110,11 +197,13 @@ async def job_result(job_id: str):
         if status.status == "failed":
             raise HTTPException(500, f"Job failed: {status.message}")
         raise HTTPException(202, "Job still processing")
+    # 处理中返回 partial（complete=false），前端可持续合并片段
     return result
 
 
 @router.get("/jobs/{job_id}/original-video")
-async def job_original_video(job_id: str):
+async def job_original_video(job_id: str, user: AuthUser = Depends(require_user)):
+    _check_job_access(job_id, user)
     video_path = job_manager.get_video_path(job_id)
     if video_path is None or not Path(video_path).is_file():
         raise HTTPException(404, "Original video not found")
@@ -122,7 +211,8 @@ async def job_original_video(job_id: str):
 
 
 @router.get("/jobs/{job_id}/video/{segment_index}")
-async def job_video_segment(job_id: str, segment_index: int):
+async def job_video_segment(job_id: str, segment_index: int, user: AuthUser = Depends(require_user)):
+    _check_job_access(job_id, user)
     segments_dir = JOBS_DIR / job_id / "segments"
     if not segments_dir.exists():
         raise HTTPException(404, "Segments not found")
@@ -143,27 +233,14 @@ def _format_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-@router.get("/jobs/{job_id}/export")
-async def job_export_excel(job_id: str):
+def _build_excel_bytes(rows: list[dict], headers: list[str], widths: list[int]) -> bytes:
     import openpyxl
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-
-    result = job_manager.get_result(job_id)
-    if result is None:
-        status = job_manager.get_status(job_id)
-        if status is None:
-            raise HTTPException(404, "Job not found")
-        if status.status == "failed":
-            raise HTTPException(500, f"Job failed: {status.message}")
-        raise HTTPException(202, "Job still processing")
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "情感识别结果"
 
-    # Header
-    headers = ["#", "开始时间", "结束时间", "时长", "文本",
-               "emotion2vec标签", "emotion2vec标签名", "教师标签", "教师标签名", "置信度"]
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11)
     thin_border = Border(
@@ -178,9 +255,43 @@ async def job_export_excel(job_id: str):
         cell.alignment = Alignment(horizontal="center")
         cell.border = thin_border
 
-    # Data rows
+    for row_idx, row in enumerate(rows, 2):
+        for col, val in enumerate(row, 1):
+            cell = ws.cell(row=row_idx, column=col, value=val)
+            cell.border = thin_border
+
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    if rows:
+        last_col = openpyxl.utils.get_column_letter(len(headers))
+        ws.auto_filter.ref = f"A1:{last_col}{len(rows) + 1}"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@router.get("/jobs/{job_id}/export")
+async def job_export_excel(job_id: str, user: AuthUser = Depends(require_user)):
+    _check_job_access(job_id, user)
+    result = job_manager.get_result(job_id)
+    if result is None:
+        status = job_manager.get_status(job_id)
+        if status is None:
+            raise HTTPException(404, "Job not found")
+        if status.status == "failed":
+            raise HTTPException(500, f"Job failed: {status.message}")
+        raise HTTPException(202, "Job still processing")
+
+    # 暂时只导出通用 emotion2vec 情感，隐藏教师情感列
+    headers = [
+        "#", "开始时间", "结束时间", "时长", "文本",
+        "emotion2vec标签", "emotion2vec标签名", "置信度",
+    ]
+    rows = []
     for seg in result.segments:
-        row = [
+        rows.append([
             seg.index + 1,
             _format_time(seg.start_time),
             _format_time(seg.end_time),
@@ -188,30 +299,59 @@ async def job_export_excel(job_id: str):
             seg.text,
             seg.emotion2vec_label,
             seg.emotion2vec_label_name,
-            seg.label,
-            seg.label_name_cn,
             round(seg.confidence, 4),
-        ]
-        for col, val in enumerate(row, 1):
-            cell = ws.cell(row=seg.index + 2, column=col, value=val)
-            cell.border = thin_border
+        ])
 
-    # Column widths
-    widths = [5, 10, 10, 10, 40, 12, 14, 8, 12, 8]
-    for i, w in enumerate(widths, 1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
-
-    # Auto-filter
-    ws.auto_filter.ref = f"A1:J{len(result.segments) + 1}"
-
-    # Save to buffer
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    widths = [5, 10, 10, 10, 40, 14, 16, 8]
+    data = _build_excel_bytes(rows, headers, widths)
 
     filename = f"{result.video_name}_emotions.xlsx"
     return StreamingResponse(
-        buf,
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/jobs/{job_id}/export")
+async def job_export_excel_edited(job_id: str, payload: ExportRequest, user: AuthUser = Depends(require_user)):
+    """使用前端编辑后的情感标签与识别文本导出 Excel（当前只导出通用 emotion2vec）"""
+    _check_job_access(job_id, user)
+    video_name = payload.video_name or job_id
+    # 暂时强制通用情感导出，忽略教师情感
+    headers = [
+        "#", "开始时间", "结束时间", "时长",
+        "识别文本", "最终文本", "文本是否修改",
+        "识别-情感标签", "识别-情感标签名",
+        "最终-情感标签", "最终-情感标签名",
+        "置信度", "情感是否修改",
+    ]
+    widths = [5, 10, 10, 10, 32, 32, 10, 14, 16, 14, 16, 8, 10]
+
+    rows = []
+    for seg in payload.segments:
+        original_text = seg.original_text if seg.original_text else seg.text
+        rows.append([
+            seg.index + 1,
+            _format_time(seg.start_time),
+            _format_time(seg.end_time),
+            _format_time(seg.duration),
+            original_text,
+            seg.text,
+            "是" if seg.text_edited else "否",
+            seg.original_emotion2vec_label,
+            seg.original_emotion2vec_label_name or "",
+            seg.emotion2vec_label,
+            seg.emotion2vec_label_name or "",
+            round(seg.confidence, 4),
+            "是" if seg.edited else "否",
+        ])
+
+    data = _build_excel_bytes(rows, headers, widths)
+    safe_name = (video_name or "result").rsplit(".", 1)[0]
+    filename = f"{safe_name}_emotions.xlsx"
+    return StreamingResponse(
+        io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -223,6 +363,14 @@ async def job_export_excel(job_id: str):
 def _process_video_frame(base64_data: str) -> dict:
     """处理视频帧：base64 解码 → 人脸检测 → 表情识别"""
     face_recognizer = get_face_recognizer()
+    # 通用情感批处理场景下启动时不预加载人脸；实时用到时再载入
+    if not face_recognizer.is_loaded:
+        try:
+            face_recognizer.load()
+        except Exception as e:
+            logger.error(f"人脸模型按需加载失败: {e}")
+            return {"type": "face_emotion", "face_detected": False}
+
     if not face_recognizer.is_loaded:
         return {"type": "face_emotion", "face_detected": False}
 

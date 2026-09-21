@@ -8,6 +8,8 @@ import torch
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+from core import memory_config as memcfg
+
 logger = logging.getLogger(__name__)
 
 EMOTION2VEC_LABELS = {
@@ -30,7 +32,21 @@ TEACHER_LABELS_CN = {
 _emotion2vec_cache = {}
 
 
-def _get_predictor(model_id: str = "iic/emotion2vec_plus_large", hub: str = "ms", model_path: str = None):
+def _default_model_args():
+    model_path = memcfg.EMOTION2VEC_MODEL_PATH or None
+    model_id = memcfg.EMOTION2VEC_MODEL_ID
+    hub = memcfg.EMOTION2VEC_HUB
+    return model_id, hub, model_path
+
+
+def _get_predictor(model_id: str = None, hub: str = None, model_path: str = None):
+    if model_id is None or hub is None or model_path is None:
+        def_id, def_hub, def_path = _default_model_args()
+        model_id = def_id if model_id is None else model_id
+        hub = def_hub if hub is None else hub
+        if model_path is None:
+            model_path = def_path
+
     cache_key = (model_id, hub, model_path)
     if cache_key in _emotion2vec_cache:
         return _emotion2vec_cache[cache_key]
@@ -39,14 +55,38 @@ def _get_predictor(model_id: str = "iic/emotion2vec_plus_large", hub: str = "ms"
     return predictor
 
 
+def release_emotion_model() -> None:
+    """释放 emotion2vec 缓存（任务结束且开启 RELEASE_MODELS_AFTER_JOB 时用）。"""
+    if not _emotion2vec_cache:
+        return
+    _emotion2vec_cache.clear()
+    try:
+        import gc
+        gc.collect()
+    except Exception:
+        pass
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+    logger.info("emotion2vec cache released")
+
+
 class Emotion2VecPredictor:
-    def __init__(self, model_id="iic/emotion2vec_plus_large", hub="ms", model_path=None):
+    def __init__(self, model_id=None, hub=None, model_path=None):
         import sys
         import warnings
 
-        logger.info(f"Loading emotion2vec model: {model_id}")
+        if model_id is None or hub is None:
+            def_id, def_hub, def_path = _default_model_args()
+            model_id = model_id or def_id
+            hub = hub or def_hub
+            if model_path is None:
+                model_path = def_path
 
-        # 静默加载：funasr/modelscope/jieba 会输出大量无关日志和警告
+        logger.info(f"Loading emotion2vec model: {model_path or model_id}")
+
         _devnull = open(os.devnull, "w")
         _old_stdout, _old_stderr = sys.stdout, sys.stderr
         sys.stdout = sys.stderr = _devnull
@@ -87,7 +127,6 @@ class Emotion2VecPredictor:
                 max_idx = 4
                 scores_9 = {i: (score if i == max_idx else 0.0) for i in range(9)}
 
-            # Resolve label index
             if isinstance(labels, list) and len(labels) > max_idx:
                 label_val = labels[max_idx]
             else:
@@ -121,7 +160,7 @@ class Emotion2VecPredictor:
         }
 
 
-def recognize_segment(video_path: str, model_id="iic/emotion2vec_plus_large", hub="ms", model_path=None) -> dict:
+def recognize_segment(video_path: str, model_id=None, hub=None, model_path=None) -> dict:
     """Extract audio from video segment and run emotion2vec prediction."""
     from core.ffmpeg_utils import extract_audio
 

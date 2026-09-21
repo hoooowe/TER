@@ -47,6 +47,22 @@ python main.py
 # Server at http://localhost:8000
 ```
 
+### 内存与模型（通用情感，默认）
+
+默认只跑 **emotion2vec 通用情感**，并做按需加载以压内存：
+
+| 环境变量 | 默认 | 说明 |
+|----------|------|------|
+| `EMOTION_MODEL` | `emotion2vec` | `custom` 才加载教师多模态（更吃内存） |
+| `EMOTION2VEC_MODEL_ID` | `iic/emotion2vec_plus_large` | 保精度；可改 `emotion2vec_base` 更省 |
+| `ASR_BACKEND` | `paraformer` | 可设 `sensevoice` 更省内存 |
+| `PUNC_MODEL` | `default`（中等词表） | `large` 恢复大标点；`none` 不加载标点 |
+| `PRELOAD_EMOTION` | `true` | `false` 则首次任务再加载情感模型 |
+| `PRELOAD_FACE` | `false` | 人脸仅实时识别时按需加载 |
+| `RELEASE_MODELS_AFTER_JOB` | `false` | `true` 则任务后释放 ASR/情感模型 |
+
+启动日志会打印当前 Memory profile。
+
 ### Frontend
 
 ```bash

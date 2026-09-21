@@ -1,3 +1,8 @@
+// 暂时隐藏教师情感（4类）相关 UI/导出；置 true 可恢复
+export const ENABLE_TEACHER_EMOTION = false
+
+export const ACTIVE_LABEL_MODE = 'e2v'
+
 // emotion2vec 9-class labels (default)
 export const E2V_COLORS = {
   0: '#FF3B30',  // angry
@@ -64,6 +69,66 @@ export function getLabel(seg, mode) {
 
 export function getLabelName(seg, mode) {
   return mode === 'teacher' ? seg.label_name_cn : (E2V_NAMES_CN[seg.emotion2vec_label] || seg.emotion2vec_label_name)
+}
+
+export function getOriginalLabel(seg, mode) {
+  return mode === 'teacher'
+    ? (seg.original_label ?? seg.label)
+    : (seg.original_emotion2vec_label ?? seg.emotion2vec_label)
+}
+
+export function getOriginalLabelName(seg, mode) {
+  if (mode === 'teacher') {
+    return seg.original_label_name_cn ?? seg.label_name_cn
+  }
+  const orig = seg.original_emotion2vec_label ?? seg.emotion2vec_label
+  return E2V_NAMES_CN[orig] || seg.emotion2vec_label_name
+}
+
+export function isLabelEdited(seg, mode) {
+  return getLabel(seg, mode) !== getOriginalLabel(seg, mode)
+}
+
+export function getLabelOptions(mode) {
+  const names = getNames(mode)
+  return Object.keys(names).map(Number).sort((a, b) => a - b).map(key => ({
+    value: key,
+    label: names[key],
+  }))
+}
+
+export function applyLabelEdit(seg, mode, newLabel) {
+  const next = { ...seg }
+  if (mode === 'teacher') {
+    next.label = newLabel
+    next.label_name_cn = TEACHER_NAMES[newLabel] ?? String(newLabel)
+  } else {
+    next.emotion2vec_label = newLabel
+    next.emotion2vec_label_name = E2V_NAMES[newLabel] ?? String(newLabel)
+  }
+  return next
+}
+
+export function getOriginalText(seg) {
+  return seg.original_text ?? seg.text ?? ''
+}
+
+export function isTextEdited(seg) {
+  return (seg.text ?? '') !== getOriginalText(seg)
+}
+
+export function applyTextEdit(seg, newText) {
+  return { ...seg, text: newText }
+}
+
+export function isSegmentEdited(seg, mode) {
+  return isLabelEdited(seg, mode) || isTextEdited(seg)
+}
+
+export function formatTime(seconds) {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 // ==================== 实时识别 7 类情感配置 ====================

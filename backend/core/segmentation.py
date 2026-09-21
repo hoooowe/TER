@@ -134,6 +134,89 @@ def split_video_by_sentences(
     return results
 
 
+def run_asr_timeline(
+    video_path: str,
+    progress_callback=None,
+) -> List[dict]:
+    """
+    抽取音频并做 ASR，返回句子时间轴 [{start, end, text}, ...]。
+    后续可按句切分并逐段识别，实现边处理边推送。
+    """
+    from core.asr import transcribe
+
+    if progress_callback:
+        progress_callback("Extracting audio...")
+    tmp_audio = extract_audio(video_path)
+    if tmp_audio is None:
+        raise RuntimeError("Failed to extract audio from video")
+
+    if progress_callback:
+        progress_callback("Running speech recognition (Paraformer)...")
+    try:
+        sentences = transcribe(tmp_audio)
+    finally:
+        if os.path.exists(tmp_audio):
+            os.remove(tmp_audio)
+
+    if not sentences:
+        raise RuntimeError("No speech detected in video")
+    return sentences
+
+
+def cut_utterance_segment(
+    video_path: str,
+    output_dir: str,
+    sentence_index: int,
+    start_time: float,
+    end_time: float,
+    text: str,
+) -> Optional[SegmentInfo]:
+    """按一条 ASR 句子切出视频片段；成功返回 SegmentInfo，失败返回 None。"""
+    if not text:
+        return None
+    os.makedirs(output_dir, exist_ok=True)
+    video_basename = os.path.splitext(os.path.basename(video_path))[0]
+    out_filename = f"{video_basename}_seg{sentence_index:04d}.mp4"
+    out_path = os.path.join(output_dir, out_filename)
+    if not cut_video(video_path, start_time, end_time, out_path):
+        return None
+    return SegmentInfo(
+        index=sentence_index,
+        start_time=start_time,
+        end_time=end_time,
+        text=text,
+        output_path=out_path,
+    )
+
+
+def iter_utterance_segments(
+    video_path: str,
+    output_dir: str,
+    sentences: List[dict],
+    min_segment_duration: float = 2.0,
+    progress_callback=None,
+):
+    """按句流式切分视频，yield SegmentInfo（便于边切边识别）。"""
+    total = len(sentences) or 1
+    if progress_callback:
+        progress_callback("Cutting video segments...")
+    for idx, sent in enumerate(sentences):
+        start_time = sent["start"]
+        end_time = sent["end"]
+        text = sent.get("text") or ""
+        if not text:
+            continue
+        if (end_time - start_time) < min_segment_duration:
+            continue
+        if progress_callback:
+            progress_callback(f"Cutting segment {idx + 1}/{total}...")
+        seg = cut_utterance_segment(
+            video_path, output_dir, idx, start_time, end_time, text
+        )
+        if seg is not None:
+            yield seg
+
+
 def split_video_by_utterances(
     video_path: str,
     output_dir: str,
@@ -146,55 +229,15 @@ def split_video_by_utterances(
     Each sentence (split by punctuation) becomes its own clip — no merging.
     This preserves fine-grained emotion changes within seconds.
     """
-    from core.asr import transcribe
-
-    os.makedirs(output_dir, exist_ok=True)
-    video_basename = os.path.splitext(os.path.basename(video_path))[0]
-
-    # Step 1: Extract audio
-    if progress_callback:
-        progress_callback("Extracting audio...")
-    tmp_audio = extract_audio(video_path)
-    if tmp_audio is None:
-        raise RuntimeError("Failed to extract audio from video")
-
-    # Step 2: Paraformer ASR with punctuation
-    if progress_callback:
-        progress_callback("Running speech recognition (Paraformer)...")
-    try:
-        sentences = transcribe(tmp_audio)
-    finally:
-        if os.path.exists(tmp_audio):
-            os.remove(tmp_audio)
-
-    if not sentences:
-        raise RuntimeError("No speech detected in video")
-
-    # Step 3: Cut each sentence as its own segment
-    if progress_callback:
-        progress_callback("Cutting video segments...")
-    results = []
-    for idx, sent in enumerate(sentences):
-        start_time = sent["start"]
-        end_time = sent["end"]
-        text = sent["text"]
-
-        if not text:
-            continue
-        if (end_time - start_time) < min_segment_duration:
-            continue
-
-        out_filename = f"{video_basename}_seg{idx:04d}.mp4"
-        out_path = os.path.join(output_dir, out_filename)
-
-        if cut_video(video_path, start_time, end_time, out_path):
-            results.append(SegmentInfo(
-                index=idx,
-                start_time=start_time,
-                end_time=end_time,
-                text=text,
-                output_path=out_path,
-            ))
-
+    sentences = run_asr_timeline(video_path, progress_callback=progress_callback)
+    results = list(
+        iter_utterance_segments(
+            video_path,
+            output_dir,
+            sentences,
+            min_segment_duration=min_segment_duration,
+            progress_callback=progress_callback,
+        )
+    )
     logger.info(f"Split into {len(results)} utterance segments")
     return results
