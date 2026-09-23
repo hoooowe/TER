@@ -78,6 +78,9 @@ RELEASE_MODELS_AFTER_JOB = _bool("RELEASE_MODELS_AFTER_JOB", False)
 # HuggingFace 镜像
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
+# 阿里云双维编码（详见 core.aliyun_config）
+from core import aliyun_config as _acfg  # noqa: E402
+
 
 def describe() -> str:
     return (
@@ -87,5 +90,6 @@ def describe() -> str:
         f"punc={PUNC_MODEL_ID or 'none'}, "
         f"preload_emotion={PRELOAD_EMOTION}, "
         f"preload_face={PRELOAD_FACE}, "
-        f"release_after_job={RELEASE_MODELS_AFTER_JOB}"
+        f"release_after_job={RELEASE_MODELS_AFTER_JOB}, "
+        f"aliyun({_acfg.describe()})"
     )

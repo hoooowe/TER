@@ -10,6 +10,12 @@
           📹 视频分析
         </button>
         <button
+          :class="['tab', { active: mode === 'dual' }]"
+          @click="switchMode('dual')"
+        >
+          🎓 双维编码
+        </button>
+        <button
           :class="['tab', { active: mode === 'history' }]"
           @click="switchMode('history')"
         >
@@ -102,14 +108,14 @@
                 <div class="export-actions">
                   <button
                     class="export-btn csv"
-                    :disabled="exporting"
+                    :disabled="!!exporting"
                     @click="onExportCsv"
                   >
                     {{ exporting === 'csv' ? '导出中…' : '导出 CSV' }}
                   </button>
                   <button
                     class="export-btn excel"
-                    :disabled="exporting"
+                    :disabled="!!exporting"
                     @click="onExportExcel"
                   >
                     {{ exporting === 'excel' ? '导出中…' : '导出 Excel' }}
@@ -144,6 +150,11 @@
         </div>
       </template>
 
+      <!-- 教学情绪-行为双维自动编码 -->
+      <template v-else-if="mode === 'dual'">
+        <DualCodingView ref="dualViewRef" />
+      </template>
+
       <!-- 识别历史 -->
       <template v-else-if="mode === 'history'">
         <div class="history-layout">
@@ -171,14 +182,14 @@
                 <div class="export-actions">
                   <button
                     class="export-btn csv"
-                    :disabled="exporting || !segments.length"
+                    :disabled="!!exporting || !segments.length"
                     @click="onExportCsv"
                   >
                     {{ exporting === 'csv' ? '导出中…' : '导出 CSV' }}
                   </button>
                   <button
                     class="export-btn excel"
-                    :disabled="exporting || !segments.length"
+                    :disabled="!!exporting || !segments.length"
                     @click="onExportExcel"
                   >
                     {{ exporting === 'excel' ? '导出中…' : '导出 Excel' }}
@@ -227,6 +238,7 @@ import ProgressPanel from './components/ProgressPanel.vue'
 import EmotionTimeline from './components/EmotionTimeline.vue'
 import ResultTable from './components/ResultTable.vue'
 import RealtimeRecognition from './components/RealtimeRecognition.vue'
+import DualCodingView from './components/DualCodingView.vue'
 import LoginView from './components/LoginView.vue'
 import HistoryPanel from './components/HistoryPanel.vue'
 import {
@@ -240,10 +252,11 @@ import {
 import { applyLabelEdit, applyTextEdit, isLabelEdited, isTextEdited, ACTIVE_LABEL_MODE } from './emotionConfig.js'
 import { exportCsv, exportExcel } from './exportUtils.js'
 
-const mode = ref('upload') // 'upload' | 'history' | 'realtime'
+const mode = ref('upload') // 'upload' | 'dual' | 'history' | 'realtime'
 const user = ref(null)
 const authChecked = ref(false)
 const loginHint = ref('')
+const dualViewRef = ref(null)
 
 const processing = ref(false)
 const progress = ref(0)
@@ -257,7 +270,7 @@ const historyPanelRef = ref(null)
 // 暂时只启用通用 emotion2vec 9 类
 const labelMode = ref(ACTIVE_LABEL_MODE)
 const segments = ref([])
-const exporting = ref('')
+const exporting = ref(null) // null | 'csv' | 'excel'；勿用 ''，Vue 会把空串当成 disabled
 const exportHint = ref('')
 const liveInfo = ref({ done: 0, total: 0 })
 
@@ -469,6 +482,16 @@ async function fetchResult(id, { keepProcessing = false } = {}) {
 
 async function onSelectHistory(item) {
   if (!item?.job_id) return
+
+  // 双维编码任务：切换到双维视图打开
+  if (item.job_type === 'dual') {
+    mode.value = 'dual'
+    // 等 DualCodingView 挂载
+    await new Promise((r) => setTimeout(r, 0))
+    dualViewRef.value?.openHistoryItem?.(item)
+    return
+  }
+
   if (item.status === 'failed') {
     error.value = item.message || '该任务识别失败'
     result.value = null
@@ -576,7 +599,7 @@ async function onExportExcel() {
   } catch (e) {
     exportHint.value = 'Excel 导出失败，请重试'
   } finally {
-    exporting.value = ''
+    exporting.value = null
   }
 }
 

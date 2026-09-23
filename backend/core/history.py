@@ -49,6 +49,8 @@ def write_job_meta(
             "segment_count": segment_count,
         }
     )
+    if extra and "job_type" in extra:
+        meta["job_type"] = extra["job_type"]
     if "created_at" not in meta:
         meta["created_at"] = _now_iso()
     meta["updated_at"] = _now_iso()
@@ -78,6 +80,18 @@ def read_job_result(jobs_dir: Path, job_id: str) -> Optional[JobResult]:
     try:
         data = json.loads(result_path.read_text(encoding="utf-8"))
         return JobResult.model_validate(data)
+    except Exception:
+        return None
+
+
+def read_dual_job_result(jobs_dir: Path, job_id: str):
+    result_path = jobs_dir / job_id / "dual_result.json"
+    if not result_path.is_file():
+        return None
+    try:
+        data = json.loads(result_path.read_text(encoding="utf-8"))
+        from api.schemas import DualCodingResult
+        return DualCodingResult.model_validate(data)
     except Exception:
         return None
 
@@ -131,6 +145,7 @@ def list_history(jobs_dir: Path, user_id: str) -> list[HistoryItem]:
                 created_at=meta.get("updated_at") or meta.get("created_at") or "",
                 total_duration=float(meta.get("total_duration") or 0.0),
                 segment_count=int(meta.get("segment_count") or 0),
+                job_type=meta.get("job_type") or "emotion",
             )
         )
 
@@ -145,3 +160,43 @@ def ensure_owner(jobs_dir: Path, job_id: str, user_id: str) -> dict:
     if meta.get("user_id") != user_id:
         raise PermissionError(job_id)
     return meta
+
+
+def delete_job(jobs_dir: Path, job_id: str, user_id: str) -> dict:
+    """
+    删除识别历史：校验归属后删除 jobs/<id>/ 整目录，
+    并尝试删除该任务独占的上传视频。
+    """
+    import shutil
+
+    meta = ensure_owner(jobs_dir, job_id, user_id)
+    job_dir = jobs_dir / job_id
+    if job_dir.is_dir():
+        shutil.rmtree(job_dir, ignore_errors=True)
+
+    # 上传视频：若无其它任务引用同一路径则一并删除
+    video_path = meta.get("video_path") or ""
+    upload_removed = False
+    if video_path:
+        vp = Path(video_path)
+        still_used = False
+        if jobs_dir.is_dir():
+            for other in jobs_dir.iterdir():
+                if not other.is_dir() or other.name == job_id:
+                    continue
+                other_meta = read_job_meta(jobs_dir, other.name)
+                if other_meta and other_meta.get("video_path") == video_path:
+                    still_used = True
+                    break
+        if not still_used and vp.is_file():
+            try:
+                vp.unlink()
+                upload_removed = True
+            except OSError:
+                pass
+
+    return {
+        "ok": True,
+        "job_id": job_id,
+        "upload_removed": upload_removed,
+    }

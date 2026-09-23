@@ -17,7 +17,7 @@
     <div v-if="!uploading" class="upload-content">
       <div class="upload-icon">+</div>
       <p class="upload-text">拖拽视频到此处 或 点击选择文件</p>
-      <p class="upload-hint">支持 mp4, avi, mov, mkv 格式</p>
+      <p class="upload-hint">{{ hint || '支持 mp4, avi, mov, mkv 格式' }}</p>
     </div>
     <div v-else class="upload-content">
       <p class="upload-text">正在上传: {{ fileName }}</p>
@@ -30,7 +30,11 @@ import { ref } from 'vue'
 import { uploadVideo } from '../api.js'
 
 const emit = defineEmits(['upload-start', 'upload-success', 'upload-error'])
-const props = defineProps({ disabled: Boolean })
+const props = defineProps({
+  disabled: Boolean,
+  uploadFn: { type: Function, default: null },
+  hint: { type: String, default: '' },
+})
 
 const fileInput = ref(null)
 const isDragging = ref(false)
@@ -70,7 +74,8 @@ async function processFile(file) {
   emit('upload-start', file.name)
 
   try {
-    const res = await uploadVideo(file)
+    const fn = props.uploadFn || uploadVideo
+    const res = await fn(file)
     emit('upload-success', res.data)
   } catch (err) {
     const msg = err.response?.data?.detail || err.message || 'Upload failed'

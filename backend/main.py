@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import router
+from api.dual_routes import router as dual_router
 from core.auth import get_auth_store
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.include_router(dual_router, prefix="/api")
 
 
 if __name__ == "__main__":

@@ -115,6 +115,18 @@ async def history_result(job_id: str, user: AuthUser = Depends(require_user)):
     return result
 
 
+@router.delete("/history/{job_id}")
+async def history_delete(job_id: str, user: AuthUser = Depends(require_user)):
+    """删除识别历史（含结果与独占上传视频）。"""
+    try:
+        info = history_store.delete_job(JOBS_DIR, job_id, user.user_id)
+    except KeyError:
+        raise HTTPException(404, "Job not found")
+    except PermissionError:
+        raise HTTPException(403, "无权删除该识别记录")
+    return info
+
+
 # ==================== 上传与任务 ====================
 
 

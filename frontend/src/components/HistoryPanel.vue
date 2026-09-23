@@ -17,40 +17,76 @@
     </div>
 
     <div v-else class="history-list">
-      <button
+      <div
         v-for="item in items"
         :key="item.job_id"
         class="history-item"
         :class="{ active: item.job_id === activeJobId }"
-        @click="$emit('select', item)"
       >
-        <div class="item-main">
-          <div class="item-title">{{ item.video_name || item.job_id }}</div>
+        <button class="item-main item-open" type="button" @click="$emit('select', item)">
+          <div class="item-title">
+            <span v-if="item.job_type === 'dual'" class="type-tag dual">双维</span>
+            <span v-else class="type-tag">情感</span>
+            {{ item.video_name || item.job_id }}
+          </div>
           <div class="item-meta">
             <span class="status" :class="item.status">{{ statusText(item.status) }}</span>
             <span>{{ item.segment_count }} 段</span>
             <span>{{ formatDuration(item.total_duration) }}</span>
             <span>{{ formatTime(item.created_at) }}</span>
           </div>
+        </button>
+        <div class="item-actions">
+          <button
+            class="delete-btn"
+            type="button"
+            :disabled="deletingId === item.job_id"
+            :title="deletingId === item.job_id ? '删除中…' : '删除该记录'"
+            @click.stop="onDelete(item)"
+          >
+            {{ deletingId === item.job_id ? '…' : '删除' }}
+          </button>
+          <div class="item-arrow">›</div>
         </div>
-        <div class="item-arrow">›</div>
-      </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { fetchHistory } from '../api.js'
+import { deleteHistory, fetchHistory } from '../api.js'
 
 const props = defineProps({
   activeJobId: { type: String, default: '' },
 })
-const emit = defineEmits(['select', 'loaded'])
+const emit = defineEmits(['select', 'loaded', 'deleted'])
 
 const items = ref([])
 const loading = ref(false)
 const error = ref('')
+const deletingId = ref('')
+
+async function onDelete(item) {
+  if (!item?.job_id || deletingId.value) return
+  const name = item.video_name || item.job_id
+  const ok = window.confirm(
+    `确定删除识别记录「${name}」吗？\n将同时删除结果与对应上传视频，不可恢复。`
+  )
+  if (!ok) return
+  deletingId.value = item.job_id
+  error.value = ''
+  try {
+    await deleteHistory(item.job_id)
+    items.value = items.value.filter((x) => x.job_id !== item.job_id)
+    emit('deleted', item.job_id)
+    emit('loaded', items.value)
+  } catch (e) {
+    error.value = e?.response?.data?.detail || '删除失败，请重试'
+  } finally {
+    deletingId.value = ''
+  }
+}
 
 function statusText(status) {
   const map = {
@@ -172,8 +208,40 @@ defineExpose({ reload: load })
   background: #fafafa;
   border-radius: 10px;
   padding: 12px 14px;
-  cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
+}
+.item-open {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.delete-btn {
+  border: 1px solid #ffcdd2;
+  background: #fff5f5;
+  color: #c62828;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.delete-btn:hover:not(:disabled) {
+  background: #c62828;
+  border-color: #c62828;
+  color: #fff;
+}
+.delete-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .history-item:hover { border-color: #007AFF; background: #f5f9ff; }
 .history-item.active {
@@ -186,6 +254,21 @@ defineExpose({ reload: load })
   color: #222;
   margin-bottom: 6px;
   word-break: break-all;
+}
+.type-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  background: #ececf0;
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.type-tag.dual {
+  color: #0a84ff;
+  background: #eef5ff;
 }
 .item-meta {
   display: flex;
