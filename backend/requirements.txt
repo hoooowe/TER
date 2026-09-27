@@ -1,32 +1,14 @@
-# Web framework
-fastapi==0.136.3
-uvicorn==0.48.0
-python-multipart==0.0.29
+# 教室情感识别（双维编码）— Web
+fastapi>=0.110
+uvicorn>=0.27
+python-multipart>=0.0.9
 
-# ASR & Emotion Recognition
-funasr==1.3.1
-modelscope==1.36.0
-torch==2.11.0
-torchaudio==2.11.0
-numpy==2.2.6
-scipy==1.15.3
-
-# Audio processing
-librosa==0.11.0
-soundfile==0.13.1
-ffmpeg-python==0.2.0
-
-# Face Recognition (realtime feature) & Visual Feature Extraction
-transformers>=4.35.0
-opencv-python-headless>=4.8.0
-Pillow>=10.0.0
-mediapipe>=0.10.0
-
-# Data & Export
-openpyxl==3.1.5
-pydantic==2.13.4
-PyYAML==6.0.3
-requests==2.33.1
-
-# 通义千问 / DashScope（qwen3-asr-flash SDK + 兼容 HTTP）
+# 通义千问（qwen3-asr-flash + qwen3.8-omni-flash）
 dashscope>=1.20.0
+
+# 数据与导出
+openpyxl>=3.1
+pydantic>=2.6
+requests>=2.31
+
+# 媒体处理依赖系统 ffmpeg

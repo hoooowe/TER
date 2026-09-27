@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from api.schemas import HistoryItem, JobResult
+from api.schemas import HistoryItem
 
 
 def _now_iso() -> str:
@@ -70,17 +70,6 @@ def read_job_meta(jobs_dir: Path, job_id: str) -> Optional[dict]:
     try:
         return json.loads(meta_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return None
-
-
-def read_job_result(jobs_dir: Path, job_id: str) -> Optional[JobResult]:
-    result_path = jobs_dir / job_id / "result.json"
-    if not result_path.is_file():
-        return None
-    try:
-        data = json.loads(result_path.read_text(encoding="utf-8"))
-        return JobResult.model_validate(data)
-    except Exception:
         return None
 
 
