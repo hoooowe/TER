@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
 
     initial_password = get_auth_store(STORAGE_DIR).ensure_default_admin()
     if initial_password:
-        logger.warning("已创建默认账号 account / %s，请登录后及时修改", initial_password)
+        logger.warning("已初始化默认管理员账号，请尽快登录并修改初始密码")
 
     logger.info("Memory profile: %s", memcfg.describe())
 

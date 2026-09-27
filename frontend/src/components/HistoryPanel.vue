@@ -59,6 +59,7 @@ import { deleteHistory, fetchHistory } from '../api.js'
 
 const props = defineProps({
   activeJobId: { type: String, default: '' },
+  jobTypeFilter: { type: String, default: '' }, // '' | 'dual' | 'emotion'
 })
 const emit = defineEmits(['select', 'loaded', 'deleted'])
 
@@ -122,7 +123,11 @@ async function load() {
   error.value = ''
   try {
     const res = await fetchHistory()
-    items.value = res.data || []
+    let list = res.data || []
+    if (props.jobTypeFilter) {
+      list = list.filter((x) => (x.job_type || 'emotion') === props.jobTypeFilter)
+    }
+    items.value = list
     emit('loaded', items.value)
   } catch (e) {
     error.value = e?.response?.data?.detail || '历史记录加载失败'

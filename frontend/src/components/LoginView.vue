@@ -51,7 +51,7 @@ const props = defineProps({
   hint: { type: String, default: '' },
 })
 
-const username = ref(props.defaultUsername || 'account')
+const username = ref(props.defaultUsername || '')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')

@@ -1,14 +1,8 @@
 <template>
   <div class="app">
     <header class="app-header">
-      <h1>情感识别系统</h1>
+      <h1>教师情感识别</h1>
       <nav v-if="user" class="mode-tabs">
-        <button
-          :class="['tab', { active: mode === 'upload' }]"
-          @click="switchMode('upload')"
-        >
-          📹 视频分析
-        </button>
         <button
           :class="['tab', { active: mode === 'dual' }]"
           @click="switchMode('dual')"
@@ -20,12 +14,6 @@
           @click="switchMode('history')"
         >
           🕘 识别历史
-        </button>
-        <button
-          :class="['tab', { active: mode === 'realtime' }]"
-          @click="switchMode('realtime')"
-        >
-          📷 实时识别
         </button>
       </nav>
       <div v-if="user" class="user-area">
@@ -43,570 +31,68 @@
 
       <div v-else-if="!user && !authChecked" class="auth-loading">检查登录状态…</div>
 
-      <!-- 视频分析模式：左右分栏 -->
-      <template v-else-if="mode === 'upload'">
-        <div class="workspace">
-          <!-- 左侧：上传 / 进度 / 视频 -->
-          <section class="panel panel-left">
-            <div v-if="!jobId" class="left-placeholder">
-              <VideoUpload
-                :disabled="processing"
-                @upload-start="onUploadStart"
-                @upload-success="onUploadSuccess"
-                @upload-error="onUploadError"
-              />
-            </div>
-
-            <div v-else class="left-stack">
-              <ProgressPanel
-                :visible="processing"
-                :progress="progress"
-                :message="progressMessage"
-                :status="jobStatus"
-              />
-
-              <div v-if="error" class="error-banner">{{ error }}</div>
-
-              <VideoPlayer
-                :job-id="jobId"
-                :segments="segments"
-                :label-mode="labelMode"
-              />
-            </div>
-          </section>
-
-          <!-- 右侧：识别结果 / 编辑 / 导出 -->
-          <section class="panel panel-right">
-            <div v-if="error && !jobId" class="error-banner">{{ error }}</div>
-
-            <div v-if="!segments.length && processing" class="right-placeholder processing">
-              <div class="placeholder-icon">⏳</div>
-              <p class="placeholder-title">正在识别情感…</p>
-              <p class="placeholder-hint">{{ progressMessage || '每识别完一段会立即显示在此处' }}</p>
-              <div class="mini-progress">
-                <div class="mini-progress-fill" :style="{ width: (progress * 100) + '%' }"></div>
-              </div>
-            </div>
-
-            <div v-else-if="!segments.length" class="right-placeholder">
-              <div class="placeholder-icon">🎯</div>
-              <p class="placeholder-title">识别结果将显示在这里</p>
-              <p class="placeholder-hint">上传视频后，片段结果会逐条出现；可编辑情感与文本，导出使用编辑后的内容</p>
-            </div>
-
-            <template v-else>
-              <div class="result-toolbar">
-                <div class="mode-toggle">
-                  <span class="mode-label">标签体系</span>
-                  <span class="mode-badge">emotion2vec 通用情感 (9类)</span>
-                  <span v-if="fromHistory" class="history-badge">历史记录</span>
-                  <span v-if="processing" class="live-badge">
-                    识别中 {{ liveInfo.done }}{{ liveInfo.total ? `/${liveInfo.total}` : '' }} 段
-                  </span>
-                </div>
-
-                <div class="export-actions">
-                  <button
-                    class="export-btn csv"
-                    :disabled="!!exporting"
-                    @click="onExportCsv"
-                  >
-                    {{ exporting === 'csv' ? '导出中…' : '导出 CSV' }}
-                  </button>
-                  <button
-                    class="export-btn excel"
-                    :disabled="!!exporting"
-                    @click="onExportExcel"
-                  >
-                    {{ exporting === 'excel' ? '导出中…' : '导出 Excel' }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="processing" class="live-progress">
-                <div class="live-progress-bar">
-                  <div class="live-progress-fill" :style="{ width: (progress * 100) + '%' }"></div>
-                </div>
-                <span class="live-progress-text">{{ progressMessage || '处理中…' }}</span>
-              </div>
-
-              <p v-if="exportHint" class="export-hint">{{ exportHint }}</p>
-              <p v-else-if="processing" class="export-hint">已出片段可先预览/编辑；全部完成后结果会自动对齐</p>
-
-              <EmotionTimeline
-                :segments="segments"
-                :total-duration="result?.total_duration || 0"
-                :label-mode="labelMode"
-              />
-
-              <ResultTable
-                :segments="segments"
-                :label-mode="labelMode"
-                @update-label="onUpdateLabel"
-                @update-text="onUpdateText"
-              />
-            </template>
-          </section>
-        </div>
-      </template>
-
-      <!-- 教学情绪-行为双维自动编码 -->
+      <!-- 教学情绪-行为双维自动编码（本分支唯一功能） -->
       <template v-else-if="mode === 'dual'">
         <DualCodingView ref="dualViewRef" />
       </template>
 
-      <!-- 识别历史 -->
+      <!-- 识别历史：仅双维任务，点击进入双维视图 -->
       <template v-else-if="mode === 'history'">
         <div class="history-layout">
           <HistoryPanel
             ref="historyPanelRef"
             :active-job-id="jobId"
+            job-type-filter="dual"
             @select="onSelectHistory"
           />
           <section class="panel panel-right history-result">
-            <div v-if="!segments.length && !result" class="right-placeholder">
-              <div class="placeholder-icon">🕘</div>
-              <p class="placeholder-title">选择左侧历史记录</p>
-              <p class="placeholder-hint">点击某条识别历史后，可在此查看时间轴、编辑文本/情感并导出；处理中的任务会实时增量显示</p>
+            <div class="right-placeholder">
+              <div class="placeholder-icon">🎓</div>
+              <p class="placeholder-title">教学情绪-行为双维编码</p>
+              <p class="placeholder-hint">
+                点击左侧历史记录，在「双维编码」页查看、复核并导出标准化编码表；
+                也可直接切换到「双维编码」上传新的教学视频
+              </p>
             </div>
-            <template v-else-if="segments.length || result">
-              <div class="result-toolbar">
-                <div class="mode-toggle">
-                  <span class="mode-label">{{ result?.video_name || result?.job_id || jobId }}</span>
-                  <span class="mode-badge">emotion2vec 通用情感 (9类)</span>
-                  <span class="history-badge">历史记录</span>
-                  <span v-if="processing" class="live-badge">
-                    识别中 {{ liveInfo.done }}{{ liveInfo.total ? `/${liveInfo.total}` : '' }} 段
-                  </span>
-                </div>
-                <div class="export-actions">
-                  <button
-                    class="export-btn csv"
-                    :disabled="!!exporting || !segments.length"
-                    @click="onExportCsv"
-                  >
-                    {{ exporting === 'csv' ? '导出中…' : '导出 CSV' }}
-                  </button>
-                  <button
-                    class="export-btn excel"
-                    :disabled="!!exporting || !segments.length"
-                    @click="onExportExcel"
-                  >
-                    {{ exporting === 'excel' ? '导出中…' : '导出 Excel' }}
-                  </button>
-                  <button class="export-btn open" @click="openInUpload">在分析页打开</button>
-                </div>
-              </div>
-              <div v-if="processing" class="live-progress">
-                <div class="live-progress-bar">
-                  <div class="live-progress-fill" :style="{ width: (progress * 100) + '%' }"></div>
-                </div>
-                <span class="live-progress-text">{{ progressMessage || '处理中…' }}</span>
-              </div>
-              <p v-if="exportHint" class="export-hint">{{ exportHint }}</p>
-              <template v-if="segments.length">
-                <EmotionTimeline
-                  :segments="segments"
-                  :total-duration="result?.total_duration || 0"
-                  :label-mode="labelMode"
-                />
-                <ResultTable
-                  :segments="segments"
-                  :label-mode="labelMode"
-                  @update-label="onUpdateLabel"
-                  @update-text="onUpdateText"
-                />
-              </template>
-            </template>
           </section>
         </div>
       </template>
 
-      <!-- 实时识别模式 -->
-      <template v-else-if="mode === 'realtime'">
-        <RealtimeRecognition />
-      </template>
     </main>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import VideoUpload from './components/VideoUpload.vue'
-import VideoPlayer from './components/VideoPlayer.vue'
-import ProgressPanel from './components/ProgressPanel.vue'
-import EmotionTimeline from './components/EmotionTimeline.vue'
-import ResultTable from './components/ResultTable.vue'
-import RealtimeRecognition from './components/RealtimeRecognition.vue'
 import DualCodingView from './components/DualCodingView.vue'
 import LoginView from './components/LoginView.vue'
 import HistoryPanel from './components/HistoryPanel.vue'
-import {
-  connectSSE,
-  getJobResult,
-  getHistoryResult,
-  exportExcelWithEdits,
-  fetchMe,
-  logout,
-} from './api.js'
-import { applyLabelEdit, applyTextEdit, isLabelEdited, isTextEdited, ACTIVE_LABEL_MODE } from './emotionConfig.js'
-import { exportCsv, exportExcel } from './exportUtils.js'
+import { fetchMe, logout } from './api.js'
 
-const mode = ref('upload') // 'upload' | 'dual' | 'history' | 'realtime'
+// 本分支仅提供「教学情绪-行为双维编码」
+const mode = ref('dual') // dual | history
 const user = ref(null)
 const authChecked = ref(false)
 const loginHint = ref('')
 const dualViewRef = ref(null)
-
-const processing = ref(false)
-const progress = ref(0)
-const progressMessage = ref('')
-const jobStatus = ref('')
-const error = ref('')
-const result = ref(null)
-const jobId = ref('')
-const fromHistory = ref(false)
 const historyPanelRef = ref(null)
-// 暂时只启用通用 emotion2vec 9 类
-const labelMode = ref(ACTIVE_LABEL_MODE)
-const segments = ref([])
-const exporting = ref(null) // null | 'csv' | 'excel'；勿用 ''，Vue 会把空串当成 disabled
-const exportHint = ref('')
-const liveInfo = ref({ done: 0, total: 0 })
 
 function switchMode(newMode) {
   mode.value = newMode
 }
 
-function mapOneSegment(seg) {
-  return {
-    ...seg,
-    original_label: seg.label,
-    original_label_name_cn: seg.label_name_cn,
-    original_label_name: seg.label_name,
-    original_emotion2vec_label: seg.emotion2vec_label,
-    original_emotion2vec_label_name: seg.emotion2vec_label_name,
-    original_text: seg.text,
-  }
-}
-
-function mapSegments(rawSegments) {
-  return (rawSegments || []).map(mapOneSegment)
-}
-
-function preserveEdits(prev, next) {
-  if (!prev) return next
-  return {
-    ...next,
-    text: isTextEdited(prev) ? prev.text : next.text,
-    emotion2vec_label: isLabelEdited(prev, 'e2v') ? prev.emotion2vec_label : next.emotion2vec_label,
-    emotion2vec_label_name: isLabelEdited(prev, 'e2v')
-      ? prev.emotion2vec_label_name
-      : next.emotion2vec_label_name,
-    label: isLabelEdited(prev, 'teacher') ? prev.label : next.label,
-    label_name_cn: isLabelEdited(prev, 'teacher') ? prev.label_name_cn : next.label_name_cn,
-  }
-}
-
-function upsertSegmentsFromServer(rawSegments) {
-  const prevMap = new Map(segments.value.map((s) => [s.index, s]))
-  const next = mapSegments(rawSegments).map((seg) => preserveEdits(prevMap.get(seg.index), seg))
-  next.sort((a, b) => a.index - b.index)
-  segments.value = next
-  syncResultShell()
-}
-
-function syncResultShell() {
-  if (!segments.value.length && !jobId.value) {
-    result.value = null
-    return
-  }
-  const base = result.value || {}
-  result.value = {
-    job_id: jobId.value || base.job_id || '',
-    video_name: base.video_name || '',
-    total_duration: base.total_duration || 0,
-    segments: segments.value,
-    complete: !processing.value,
-  }
-}
-
-function applyLivePayload(data) {
-  progress.value = data.progress ?? progress.value
-  progressMessage.value = data.message || progressMessage.value
-  jobStatus.value = data.status || jobStatus.value
-
-  if (data.video_name && result.value) {
-    result.value = { ...result.value, video_name: data.video_name }
-  } else if (data.video_name && !result.value) {
-    result.value = {
-      job_id: jobId.value || data.job_id || '',
-      video_name: data.video_name,
-      total_duration: data.total_duration || 0,
-      segments: [],
-      complete: false,
-    }
-  } else if (!result.value && jobId.value) {
-    result.value = {
-      job_id: jobId.value,
-      video_name: '',
-      total_duration: data.total_duration || 0,
-      segments: [],
-      complete: false,
-    }
-  }
-
-  if (data.total_duration && result.value) {
-    result.value = { ...result.value, total_duration: data.total_duration }
-  }
-
-  if (Array.isArray(data.segments)) {
-    upsertSegmentsFromServer(data.segments)
-  }
-  if (data.segment) {
-    const prevMap = new Map(segments.value.map((s) => [s.index, s]))
-    const mapped = preserveEdits(prevMap.get(data.segment.index), mapOneSegment(data.segment))
-    const arr = segments.value.filter((s) => s.index !== mapped.index)
-    arr.push(mapped)
-    arr.sort((a, b) => a.index - b.index)
-    segments.value = arr
-    syncResultShell()
-  }
-
-  liveInfo.value = {
-    done: data.segments_done ?? segments.value.length,
-    total: data.segments_total ?? liveInfo.value.total,
-  }
-}
-
-function applyResultData(data, { keepProcessing = false } = {}) {
-  const prevMap = new Map(segments.value.map((s) => [s.index, s]))
-  const mapped = mapSegments(data.segments).map((seg) => preserveEdits(prevMap.get(seg.index), seg))
-  result.value = { ...data, segments: mapped }
-  segments.value = mapped
-  if (!keepProcessing) {
-    processing.value = false
-    if (data.complete !== false) {
-      liveInfo.value = { done: mapped.length, total: mapped.length }
-    }
-  } else if (Array.isArray(data.segments)) {
-    liveInfo.value = {
-      done: data.segments.length,
-      total: liveInfo.value.total || data.segments.length,
-    }
-  }
-  error.value = ''
-  if (!keepProcessing) exportHint.value = ''
-}
-
-function onUploadStart() {
-  error.value = ''
-  result.value = null
-  jobId.value = ''
-  segments.value = []
-  processing.value = true
-  progress.value = 0
-  progressMessage.value = 'Uploading...'
-  exportHint.value = ''
-  fromHistory.value = false
-  liveInfo.value = { done: 0, total: 0 }
-}
-
-function onUploadSuccess(jobData) {
-  jobId.value = jobData.job_id
-  progressMessage.value = 'Processing...'
-  fromHistory.value = false
-  processing.value = true
-  result.value = {
-    job_id: jobData.job_id,
-    video_name: jobData.video_name || '',
-    total_duration: 0,
-    segments: [],
-    complete: false,
-  }
-
-  connectSSE(
-    jobData.job_id,
-    (data) => {
-      applyLivePayload(data)
-
-      if (data.status === 'done' || data.event === 'done') {
-        if (Array.isArray(data.segments) && data.segments.length) {
-          applyResultData({
-            job_id: jobData.job_id,
-            video_name: data.video_name || result.value?.video_name || '',
-            total_duration: data.total_duration || result.value?.total_duration || 0,
-            segments: data.segments,
-            complete: true,
-          })
-        } else {
-          fetchResult(jobData.job_id, { keepProcessing: false })
-        }
-      } else if (data.status === 'failed' || data.event === 'failed') {
-        processing.value = false
-        error.value = data.message || 'Processing failed'
-      }
-    },
-    () => {
-      fetchResult(jobData.job_id, { keepProcessing: true })
-    },
-  )
-}
-
-async function fetchResult(id, { keepProcessing = false } = {}) {
-  try {
-    const res = await getJobResult(id)
-    const data = res.data
-    if (data?.complete === false && keepProcessing) {
-      applyResultData(data, { keepProcessing: true })
-      processing.value = true
-      return
-    }
-    applyResultData(data)
-  } catch (e) {
-    if (e?.response?.status === 401) {
-      user.value = null
-      loginHint.value = '登录已过期，请重新登录'
-      return
-    }
-    if (e?.response?.status === 202) {
-      // 仍在处理且暂无片段
-      return
-    }
-    if (!keepProcessing) {
-      error.value = 'Failed to fetch results'
-      processing.value = false
-    }
-  }
-}
-
 async function onSelectHistory(item) {
   if (!item?.job_id) return
-
-  // 双维编码任务：切换到双维视图打开
-  if (item.job_type === 'dual') {
-    mode.value = 'dual'
-    // 等 DualCodingView 挂载
-    await new Promise((r) => setTimeout(r, 0))
-    dualViewRef.value?.openHistoryItem?.(item)
-    return
-  }
-
-  if (item.status === 'failed') {
-    error.value = item.message || '该任务识别失败'
-    result.value = null
-    segments.value = []
-    jobId.value = item.job_id
-    fromHistory.value = true
-    processing.value = false
-    return
-  }
-
-  error.value = ''
-  exportHint.value = ''
-  jobId.value = item.job_id
-  fromHistory.value = true
-  const isLive = item.status === 'processing' || item.status === 'pending'
-  processing.value = isLive
-  liveInfo.value = {
-    done: item.segment_count || 0,
-    total: item.segment_count || 0,
-  }
-
-  try {
-    const res = await getHistoryResult(item.job_id)
-    applyResultData(res.data, { keepProcessing: isLive })
-  } catch (e) {
-    // 处理中可能只有 partial / 202
-    if (isLive) {
-      try {
-        const res = await getJobResult(item.job_id)
-        applyResultData(res.data, { keepProcessing: res.data?.complete === false })
-        if (res.data?.complete === false) {
-          result.value = {
-            ...(res.data || {}),
-            video_name: res.data.video_name || item.video_name || '',
-          }
-        }
-        return
-      } catch (e2) {
-        result.value = {
-          job_id: item.job_id,
-          video_name: item.video_name || '',
-          total_duration: item.total_duration || 0,
-          segments: [],
-          complete: false,
-        }
-        segments.value = []
-        progressMessage.value = item.message || '识别中…'
-        return
-      }
-    }
-    result.value = null
-    segments.value = []
-    error.value = e?.response?.data?.detail || '历史结果加载失败'
-  }
-}
-
-function openInUpload() {
-  if (!result.value) return
-  mode.value = 'upload'
-  fromHistory.value = true
-}
-
-function onUploadError(msg) {
-  processing.value = false
-  error.value = msg
-}
-
-function onUpdateLabel({ index, label }) {
-  const i = segments.value.findIndex((s) => s.index === index)
-  if (i < 0) return
-  segments.value[i] = applyLabelEdit(segments.value[i], labelMode.value, label)
-  exportHint.value = '导出将使用当前编辑后的情感标签与识别文本'
-}
-
-function onUpdateText({ index, text }) {
-  const i = segments.value.findIndex((s) => s.index === index)
-  if (i < 0) return
-  segments.value[i] = applyTextEdit(segments.value[i], text)
-  exportHint.value = '导出将使用当前编辑后的情感标签与识别文本'
-}
-
-function onExportCsv() {
-  if (!segments.value.length) return
-  exportCsv({
-    segments: segments.value,
-    videoName: result.value?.video_name || 'result',
-    labelMode: labelMode.value,
-  })
-  exportHint.value = '已导出 CSV（含编辑后的情感与文本）'
-}
-
-async function onExportExcel() {
-  if (!segments.value.length || !jobId.value) return
-  exporting.value = 'excel'
-  exportHint.value = ''
-  try {
-    await exportExcel({
-      jobId: jobId.value,
-      segments: segments.value,
-      videoName: result.value?.video_name || '',
-      labelMode: labelMode.value,
-      requestFn: exportExcelWithEdits,
-    })
-    exportHint.value = '已导出 Excel（含编辑后的情感与文本）'
-  } catch (e) {
-    exportHint.value = 'Excel 导出失败，请重试'
-  } finally {
-    exporting.value = null
-  }
+  if (item.job_type && item.job_type !== 'dual') return
+  mode.value = 'dual'
+  await new Promise((r) => setTimeout(r, 0))
+  dualViewRef.value?.openHistoryItem?.(item)
 }
 
 function onLoginSuccess(data) {
   user.value = data
   loginHint.value = ''
-  mode.value = 'upload'
+  mode.value = 'dual'
   historyPanelRef.value?.reload?.()
 }
 
@@ -617,22 +103,19 @@ async function onLogout() {
     // ignore
   }
   user.value = null
-  result.value = null
-  jobId.value = ''
-  segments.value = []
-  processing.value = false
-  mode.value = 'upload'
+  mode.value = 'dual'
   loginHint.value = ''
+  dualViewRef.value?.resetAll?.()
 }
 
 onMounted(async () => {
   try {
     const res = await fetchMe()
     user.value = res.data
-    loginHint.value = '默认账号：account / password（用户文件：storage/users.json）'
+    loginHint.value = ''
   } catch (_) {
     user.value = null
-    loginHint.value = '请使用账号 account / password 登录'
+    loginHint.value = ''
   } finally {
     authChecked.value = true
   }
