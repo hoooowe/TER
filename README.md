@@ -1,37 +1,41 @@
 # TER · classroom-emotion
 
-**教师情感识别**（分支 `classroom-emotion`）— 仅保留教学情绪-行为双维自动编码。
+**教师情感识别** — 教学情绪-行为双维自动编码（分支 `classroom-emotion`）。
 
-## 功能（本分支）
+上传微格/模拟教学视频，按论文编码体系自动输出：
 
-1. **双维编码（教学情绪-行为）**：面向微格/模拟教学，按论文第三章编码体系自动输出教学行为编码（B1–B15）与可观察教学情绪编码（E1–E3 / U1 / N1–N2 / X0）。ASR 使用 `qwen3-asr-flash`，多模态使用 `qwen3.8-omni-flash`。一个编码单元 = 一个行为码 + 一个情绪码；边识别边展示，支持人工复核并导出标准化双维编码表。
-2. **识别历史**：查看/删除双维任务，打开复核与导出。
-
-> 通用 emotion2vec 视频分析、实时人脸/语音识别不在本分支范围。
+- **教学行为** B1–B15（知识讲授 / 教学互动 / 教学操作 / 课堂组织 / 授课失误）
+- **可观察教学情绪** E1–E3 / U1 / N1–N2 / **X0**
+- 同一时间轴：一个编码单元 = 一个行为码 + 一个情绪码
+- 边识别边展示，人工复核后导出标准化双维编码表（含编码手册、过程指标、三种矩阵）
 
 ## 技术栈
 
-- 后端：FastAPI + Vue 3
-- 通用情感：FunASR / emotion2vec+
-- 双维编码：阿里云 DashScope（`DASHSCOPE_API_KEY`）
+| 部分 | 方案 |
+|------|------|
+| 前端 | Vue 3 + Vite |
+| 后端 | FastAPI |
+| ASR | 阿里云 `qwen3-asr-flash` |
+| 多模态 | `qwen3.8-omni-flash`（OpenAI 兼容） |
+| 导出 | openpyxl（Excel） |
 
-## 双维编码配置（`backend/.env` 或环境变量）
+## 配置（`backend/.env`）
 
 | 变量 | 说明 | 默认 |
 |------|------|------|
-| `DASHSCOPE_API_KEY` | 通义/DashScope API Key（必填） | 读取 `backend/.env` |
-| `ALIYUN_ASR_MODEL` | 语音识别模型 | `qwen3-asr-flash` |
+| `DASHSCOPE_API_KEY` | 通义 API Key（必填） | — |
+| `ALIYUN_ASR_MODEL` | 语音识别 | `qwen3-asr-flash` |
 | `ALIYUN_ASR_BASE_URL` | ASR 端点 | `https://maas.qianwenaiapi.com/api/v1` |
-| `ALIYUN_VL_MODEL` | 多模态大模型 | `qwen3.8-omni-flash` |
-| `ALIYUN_VL_BASE_URL` | OpenAI 兼容端点 | `https://maas.qianwenaiapi.com/compatible-mode/v1` |
-| `DUAL_CONFIDENCE_THRESHOLD` | 低置信度复核阈值 | `0.70` |
-| `DUAL_FRAMES_MODE` | 抽帧策略 | `adaptive`（4/8/12） |
-| `DUAL_FRAMES_PER_UNIT` | 目标帧数（高精度 8 帧） | `8` |
+| `ALIYUN_VL_MODEL` | 多模态模型 | `qwen3.8-omni-flash` |
+| `ALIYUN_VL_BASE_URL` | VL 端点 | `https://maas.qianwenaiapi.com/compatible-mode/v1` |
+| `DUAL_FRAMES_MODE` | 抽帧 | `adaptive`（4/8/12 帧） |
+| `DUAL_CONFIDENCE_THRESHOLD` | 待复核阈值 | `0.70` |
 
 ## 启动
 
 ```bash
-# 后端（API Key 写在 backend/.env，勿提交仓库）
+# 系统依赖：ffmpeg
+# 后端（Key 写入 backend/.env，勿提交仓库）
 cd backend
 pip install -r requirements.txt
 python main.py
@@ -41,3 +45,15 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## API 一览
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/login` | 登录 |
+| GET | `/api/history` | 双维历史列表 |
+| DELETE | `/api/history/{id}` | 删除历史 |
+| POST | `/api/dual/upload` | 上传视频并开始双维编码 |
+| GET | `/api/dual/jobs/{id}/progress` | SSE 实时进度 |
+| GET | `/api/dual/jobs/{id}/result` | 编码结果 |
+| POST | `/api/dual/jobs/{id}/export` | 导出 Excel（含编辑） |

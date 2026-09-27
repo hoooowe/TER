@@ -1,14 +1,14 @@
-# 教室情感识别（双维编码）— Web
+# 教室情感识别（双维编码）后端依赖
+# 仅教学情绪-行为双维自动编码：通义 ASR + Qwen-VL + Excel 导出
+
 fastapi>=0.110
 uvicorn>=0.27
 python-multipart>=0.0.9
 
-# 通义千问（qwen3-asr-flash + qwen3.8-omni-flash）
+# qwen3-asr-flash（DashScope SDK）
 dashscope>=1.20.0
 
-# 数据与导出
 openpyxl>=3.1
 pydantic>=2.6
-requests>=2.31
 
-# 媒体处理依赖系统 ffmpeg
+# 系统需安装 ffmpeg（抽音频 / 抽帧）

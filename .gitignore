@@ -36,4 +36,6 @@ backend/models/*.pt
 
 .claude/
 
-docs/
+# 研究文档/论文本地保留；部署说明入库
+docs/*
+!docs/DEPLOY.md
