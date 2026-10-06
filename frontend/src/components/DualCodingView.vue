@@ -1,9 +1,9 @@
 <template>
-  <div class="dual-view">
-    <div class="workspace">
-      <!-- 左侧：上传 / 进度 / 视频 -->
+  <div class="dual-view" :class="{ 'is-result': !!jobId }">
+    <!-- 上传引导态：两栏介绍 + 上传 -->
+    <div v-if="!jobId" class="workspace workspace-upload">
       <section class="panel panel-left">
-        <div v-if="!jobId" class="left-placeholder">
+        <div class="left-placeholder">
           <div class="intro-card">
             <h2>教学情绪-行为双维自动编码</h2>
             <p>
@@ -29,111 +29,126 @@
             @upload-error="onUploadError"
           />
         </div>
-
-        <div v-else class="left-stack">
-          <ProgressPanel
-            :visible="processing"
-            :progress="progress"
-            :message="progressMessage"
-            :status="jobStatus"
-          />
-          <div v-if="error" class="error-banner">{{ error }}</div>
-
-          <div class="video-card">
-            <h3 class="card-title">原始视频</h3>
-            <video
-              ref="videoEl"
-              :src="videoUrl"
-              controls
-              class="video-player"
-            ></video>
-          </div>
-        </div>
       </section>
 
-      <!-- 右侧：双维结果 -->
       <section class="panel panel-right">
-        <div v-if="error && !jobId" class="error-banner">{{ error }}</div>
-
-        <div v-if="!units.length && processing" class="right-placeholder processing">
-          <div class="placeholder-icon">⏳</div>
-          <p class="placeholder-title">正在进行双维自动编码…</p>
-          <p class="placeholder-hint">{{ progressMessage || '语音识别 → 逐段多模态编码 → 实时展示' }}</p>
-          <div class="mini-progress">
-            <div class="mini-progress-fill" :style="{ width: (progress * 100) + '%' }"></div>
-          </div>
-        </div>
-
-        <div v-else-if="!units.length" class="right-placeholder">
+        <div v-if="error" class="error-banner">{{ error }}</div>
+        <div class="right-placeholder">
           <div class="placeholder-icon">🎬</div>
           <p class="placeholder-title">双维编码结果将显示在这里</p>
           <p class="placeholder-hint">一个编码单元 = 一个行为码 + 一个情绪码；可人工复核后导出标准化编码表</p>
         </div>
-
-        <template v-else>
-          <div class="result-toolbar">
-            <div class="mode-toggle">
-              <span class="mode-label">{{ result?.video_name || jobId }}</span>
-              <span class="mode-badge">情绪-行为双维编码</span>
-              <span v-if="fromHistory" class="history-badge">历史记录</span>
-              <span v-if="processing" class="live-badge">
-                识别中 · 已展示 {{ units.length }} 段
-              </span>
-              <span v-if="reviewPending" class="review-badge">待复核 {{ reviewPending }}</span>
-            </div>
-            <div class="export-actions">
-              <button
-                class="export-btn csv"
-                :disabled="!!exporting || !units.length"
-                @click="onExportCsv"
-              >
-                {{ exporting === 'csv' ? '导出中…' : '导出 CSV' }}
-              </button>
-              <button
-                class="export-btn excel"
-                :disabled="!!exporting || !units.length || !jobId"
-                @click="onExportExcel"
-              >
-                {{ exporting === 'excel' ? '导出中…' : '导出 Excel' }}
-              </button>
-              <button class="export-btn" @click="resetAll">新建分析</button>
-            </div>
-          </div>
-
-          <div v-if="processing" class="live-progress">
-            <div class="live-progress-bar">
-              <div class="live-progress-fill" :style="{ width: (progress * 100) + '%' }"></div>
-            </div>
-            <span class="live-progress-text">{{ progressMessage || '处理中…' }}</span>
-          </div>
-
-          <p v-if="exportHint" class="export-hint">{{ exportHint }}</p>
-          <p v-else-if="processing" class="export-hint">
-            完成一段展示一段，可边识别边复核；结束后自动汇总指标
-          </p>
-
-          <DualTimeline
-            :units="units"
-            :total-duration="result?.total_duration || 0"
-            @seek="onSeek"
-          />
-
-          <div v-if="result?.summary" class="metrics-bar">
-            <span v-for="(val, key) in metricItems" :key="key" class="metric">
-              {{ key }} {{ (val * 100).toFixed(1) }}%
-            </span>
-          </div>
-
-          <DualResultTable
-            :units="units"
-            @update-behavior="onUpdateBehavior"
-            @update-emotion="onUpdateEmotion"
-            @update-text="onUpdateText"
-            @update-review="onUpdateReview"
-          />
-        </template>
       </section>
     </div>
+
+    <!-- 结果态：上排视频 + 摘要信息固定，下排双维编码表占满全宽 -->
+    <template v-else>
+      <div class="top-row">
+        <section class="panel panel-left">
+          <div class="left-stack">
+            <ProgressPanel
+              :visible="processing"
+              :progress="progress"
+              :message="progressMessage"
+              :status="jobStatus"
+            />
+            <div v-if="error" class="error-banner">{{ error }}</div>
+
+            <div class="video-card">
+              <h3 class="card-title">原始视频</h3>
+              <video
+                ref="videoEl"
+                :src="videoUrl"
+                controls
+                class="video-player"
+              ></video>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel-right">
+          <div v-if="!units.length && processing" class="right-placeholder processing">
+            <div class="placeholder-icon">⏳</div>
+            <p class="placeholder-title">正在进行双维自动编码…</p>
+            <p class="placeholder-hint">{{ progressMessage || '语音识别 → 逐段多模态编码 → 实时展示' }}</p>
+            <div class="mini-progress">
+              <div class="mini-progress-fill" :style="{ width: (progress * 100) + '%' }"></div>
+            </div>
+          </div>
+
+          <div v-else-if="!units.length" class="right-placeholder">
+            <div class="placeholder-icon">🎬</div>
+            <p class="placeholder-title">双维编码结果将显示在这里</p>
+            <p class="placeholder-hint">一个编码单元 = 一个行为码 + 一个情绪码；可人工复核后导出标准化编码表</p>
+          </div>
+
+          <template v-else>
+            <div class="result-toolbar">
+              <div class="mode-toggle">
+                <span class="mode-label">{{ result?.video_name || jobId }}</span>
+                <span class="mode-badge">情绪-行为双维编码</span>
+                <span v-if="fromHistory" class="history-badge">历史记录</span>
+                <span v-if="processing" class="live-badge">
+                  识别中 · 已展示 {{ units.length }} 段
+                </span>
+                <span v-if="reviewPending" class="review-badge">待复核 {{ reviewPending }}</span>
+              </div>
+              <div class="export-actions">
+                <button
+                  class="export-btn csv"
+                  :disabled="!!exporting || !units.length"
+                  @click="onExportCsv"
+                >
+                  {{ exporting === 'csv' ? '导出中…' : '导出 CSV' }}
+                </button>
+                <button
+                  class="export-btn excel"
+                  :disabled="!!exporting || !units.length || !jobId"
+                  @click="onExportExcel"
+                >
+                  {{ exporting === 'excel' ? '导出中…' : '导出 Excel' }}
+                </button>
+                <button class="export-btn" @click="resetAll">新建分析</button>
+              </div>
+            </div>
+
+            <div v-if="processing" class="live-progress">
+              <div class="live-progress-bar">
+                <div class="live-progress-fill" :style="{ width: (progress * 100) + '%' }"></div>
+              </div>
+              <span class="live-progress-text">{{ progressMessage || '处理中…' }}</span>
+            </div>
+
+            <p v-if="exportHint" class="export-hint">{{ exportHint }}</p>
+            <p v-else-if="processing" class="export-hint">
+              完成一段展示一段，可边识别边复核；结束后自动汇总指标
+            </p>
+
+            <DualTimeline
+              :units="units"
+              :total-duration="result?.total_duration || 0"
+              @seek="onSeek"
+            />
+
+            <div v-if="result?.summary" class="metrics-bar">
+              <span v-for="(val, key) in metricItems" :key="key" class="metric">
+                {{ key }} {{ (val * 100).toFixed(1) }}%
+              </span>
+            </div>
+          </template>
+        </section>
+      </div>
+
+      <div v-if="units.length" class="table-row">
+        <DualResultTable
+          :units="units"
+          @update-behavior="onUpdateBehavior"
+          @update-emotion="onUpdateEmotion"
+          @update-text="onUpdateText"
+          @update-review="onUpdateReview"
+        />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -533,15 +548,46 @@ defineExpose({ openHistoryItem, resetAll })
 <style scoped>
 .dual-view {
   height: 100%;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
+/* 上传引导态：两栏 */
 .workspace {
   display: grid;
   grid-template-columns: minmax(280px, 0.9fr) 1.4fr;
   gap: 16px;
   align-items: start;
 }
+.workspace-upload {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .panel {
   min-width: 0;
+}
+/* 结果态上排：左视频 + 右摘要信息，高度由内容决定，不滚动 */
+.top-row {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) 1.4fr;
+  gap: 16px;
+  align-items: start;
+}
+/* 结果态下排：双维编码表占满全宽剩余高度，内部滚动 */
+.table-row {
+  flex: 1 1 auto;
+  min-height: 140px;
+  margin-top: 16px;
+  display: flex;
+}
+.table-row > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 .left-placeholder {
   display: flex;
@@ -751,8 +797,19 @@ defineExpose({ openHistoryItem, resetAll })
   padding: 4px 8px;
 }
 @media (max-width: 980px) {
-  .workspace {
+  .workspace,
+  .top-row {
     grid-template-columns: 1fr;
+  }
+  .workspace-upload {
+    flex: none;
+    overflow: visible;
+  }
+  .dual-view {
+    height: auto;
+  }
+  .table-row {
+    min-height: 55vh;
   }
 }
 </style>

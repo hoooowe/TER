@@ -27,7 +27,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { uploadVideo } from '../api.js'
+import { uploadDualVideo } from '../api.js'
 
 const emit = defineEmits(['upload-start', 'upload-success', 'upload-error'])
 const props = defineProps({
@@ -74,7 +74,7 @@ async function processFile(file) {
   emit('upload-start', file.name)
 
   try {
-    const fn = props.uploadFn || uploadVideo
+    const fn = props.uploadFn || uploadDualVideo
     const res = await fn(file)
     emit('upload-success', res.data)
   } catch (err) {

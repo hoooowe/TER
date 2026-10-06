@@ -184,6 +184,10 @@ function onReview(u, marked) {
   border-radius: 12px;
   padding: 16px 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .table-header {
   display: flex;
@@ -192,6 +196,7 @@ function onReview(u, marked) {
   margin-bottom: 12px;
   flex-wrap: wrap;
   gap: 8px;
+  flex: 0 0 auto;
 }
 .table-title {
   font-size: 15px;
@@ -234,7 +239,9 @@ function onReview(u, marked) {
   color: #007AFF;
 }
 .table-scroll {
-  overflow-x: auto;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .dual-table {
   width: 100%;
@@ -249,6 +256,10 @@ function onReview(u, marked) {
   color: #666;
   font-weight: 600;
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 2;
 }
 .dual-table td {
   padding: 8px 6px;

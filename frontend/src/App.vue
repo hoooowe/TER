@@ -1,5 +1,5 @@
 <template>
-  <div class="app">
+  <div class="app" :class="{ 'app-fixed': !!user && mode === 'dual' }">
     <header class="app-header">
       <h1>教师情感识别</h1>
       <nav v-if="user" class="mode-tabs">
@@ -22,7 +22,7 @@
       </div>
     </header>
 
-    <main class="app-main">
+    <main class="app-main" :class="{ 'main-fixed': !!user && mode === 'dual' }">
       <LoginView
         v-if="!user && authChecked"
         :hint="loginHint"
@@ -41,7 +41,6 @@
         <div class="history-layout">
           <HistoryPanel
             ref="historyPanelRef"
-            :active-job-id="jobId"
             job-type-filter="dual"
             @select="onSelectHistory"
           />
@@ -182,6 +181,25 @@ body {
   max-width: 1400px;
   margin: 24px auto;
   padding: 0 20px 40px;
+}
+/* 双维编码结果页：锁定视口高度，页面本身不滚动，滚动交给表格区域 */
+.app.app-fixed {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-fixed .app-header {
+  position: static;
+  flex: 0 0 auto;
+}
+.app-main.main-fixed {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  overflow: hidden;
 }
 .auth-loading {
   text-align: center;
@@ -381,5 +399,14 @@ body {
   }
   .app-main { padding: 0 12px 32px; }
   .app-header { flex-wrap: wrap; gap: 12px; }
+  /* 窄屏不锁高度，恢复整页滚动 */
+  .app.app-fixed { height: auto; display: block; overflow: visible; }
+  .app-fixed .app-header { position: sticky; }
+  .app-main.main-fixed {
+    display: block;
+    overflow: visible;
+    margin: 24px auto;
+    padding: 0 12px 32px;
+  }
 }
 </style>
