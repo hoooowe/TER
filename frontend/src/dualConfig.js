@@ -115,6 +115,8 @@ export function applyTextEdit(unit, text) {
   return { ...unit, text: text ?? '' }
 }
 
+// 只记录复核状态，不动 needs_review：
+// 这样取消复核后该单元仍会回到「待复核」列表（needs_review && !review_marked）
 export function applyReviewMark(unit, marked) {
-  return { ...unit, review_marked: !!marked, needs_review: marked ? false : unit.needs_review }
+  return { ...unit, review_marked: !!marked }
 }

@@ -35,7 +35,20 @@
             <th>情绪（可编辑）</th>
             <th>判定依据</th>
             <th>置信</th>
-            <th>复核</th>
+            <th class="review-th">
+              <label
+                class="select-all"
+                :title="`全选/取消当前列表（${filtered.length} 条）的「已复核」`"
+              >
+                <input
+                  type="checkbox"
+                  :checked="allMarked"
+                  :indeterminate="someMarked && !allMarked"
+                  @change="toggleAllReview"
+                />
+                全选
+              </label>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -133,7 +146,13 @@ import {
 const props = defineProps({
   units: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['update-behavior', 'update-emotion', 'update-text', 'update-review'])
+const emit = defineEmits([
+  'update-behavior',
+  'update-emotion',
+  'update-text',
+  'update-review',
+  'update-review-batch',
+])
 
 const filterType = ref('') // '' | 'review' | 'edited'
 
@@ -149,6 +168,20 @@ const filtered = computed(() => {
   }
   return props.units
 })
+
+// 全选状态：作用于当前列表（筛选后的行）
+const markedCount = computed(() => filtered.value.filter((u) => !!u.review_marked).length)
+const allMarked = computed(() => filtered.value.length > 0 && markedCount.value === filtered.value.length)
+const someMarked = computed(() => markedCount.value > 0)
+
+function toggleAllReview() {
+  if (!filtered.value.length) return
+  const marked = !allMarked.value
+  emit('update-review-batch', {
+    indices: filtered.value.map((u) => u.index),
+    marked,
+  })
+}
 
 function toggleReviewFilter() {
   filterType.value = filterType.value === 'review' ? '' : 'review'
@@ -349,6 +382,26 @@ function onReview(u, marked) {
   font-size: 12px;
   color: #555;
   cursor: pointer;
+}
+.review-th {
+  white-space: nowrap;
+}
+.select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #007AFF;
+  cursor: pointer;
+  user-select: none;
+}
+.select-all input {
+  cursor: pointer;
+  margin: 0;
+}
+.select-all:hover {
+  color: #0A5FD1;
 }
 .edited-tag {
   margin-top: 4px;

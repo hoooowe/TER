@@ -146,6 +146,7 @@
           @update-emotion="onUpdateEmotion"
           @update-text="onUpdateText"
           @update-review="onUpdateReview"
+          @update-review-batch="onUpdateReviewBatch"
         />
       </div>
     </template>
@@ -444,6 +445,14 @@ function onUpdateText({ index, text }) {
 
 function onUpdateReview({ index, marked }) {
   replaceUnit(index, (u) => applyReviewMark(u, marked))
+}
+
+// 人工复核全选：一次性批量更新，避免逐条触发重渲染
+function onUpdateReviewBatch({ indices, marked }) {
+  const target = new Set(indices || [])
+  if (!target.size) return
+  units.value = units.value.map((u) => (target.has(u.index) ? applyReviewMark(u, marked) : u))
+  syncShell()
 }
 
 function onSeek(time) {
