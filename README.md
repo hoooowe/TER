@@ -9,7 +9,11 @@
 
 识别结果在同一时间轴上对齐（一个片段 = 一个行为码 + 一个情绪码），可人工复核后导出标准化双维编码表，供研究分析使用。
 
-技术上采用通义语音识别 + 多模态大模型完成自动编码，界面支持逐段展示与在线修改。
+技术上采用通义语音识别 + 可配置的 OpenAI 兼容多模态大模型完成自动编码，界面支持逐段展示与在线修改。
+
+模型配置从 `backend/.env` 读取。将 `backend/.env.example` 复制为 `.env`，填入语音识别的 `DASHSCOPE_API_KEY` 与多模态模型的 `VL_API_KEY`；示例已配置 Kimi-K2.6。更换服务商只需修改 `VL_MODEL`、`VL_BASE_URL` 和 `VL_API_KEY`，并按其协议调整 `VL_PROVIDER`、`VL_THINKING` 等参数，随后重启后端。
+
+配置优先级为同名进程环境变量 > `backend/.env` > 仓库根目录 `.env`。旧 `ALIYUN_VL_MODEL` / `ALIYUN_VL_BASE_URL` 仍作为兜底兼容。完整配置与 Kimi 兼容性说明见 [部署说明](docs/DEPLOY.md#2-配置)。
 
 ---
 

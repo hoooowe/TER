@@ -1,7 +1,7 @@
 """
-通义千问多模态教学双维编码客户端（OpenAI 兼容）。
+多模态教学双维编码客户端（OpenAI Chat Completions 兼容）。
 
-默认模型：qwen3.8-omni-flash @ maas.qianwenaiapi.com
+模型、地址、密钥和请求参数由 .env 中的 VL_* 配置决定。
 输入：视频抽帧（base64 image_url）+ 转写文本 + 编码手册提示词
 输出：行为编码 + 可观察情绪编码 + 依据 + 置信度（JSON）
 """
@@ -29,12 +29,12 @@ class AliyunVLError(RuntimeError):
 
 
 def _require_key() -> str:
-    if not acfg.has_api_key():
+    if not acfg.has_vl_api_key():
         raise AliyunVLError(
-            "缺少 DASHSCOPE_API_KEY（阿里云百炼 API Key）。"
-            "请在 backend 环境变量中设置后重启服务。"
+            "缺少多模态模型密钥 VL_API_KEY。"
+            "请在 backend/.env 或环境变量中设置后重启服务。"
         )
-    return acfg.DASHSCOPE_API_KEY
+    return acfg.VL_API_KEY
 
 
 def plan_frame_count(duration: float) -> int:
@@ -190,9 +190,10 @@ def image_to_base64_url(path: str) -> str:
 def call_qwen_vl(
     prompt: str,
     image_paths: Optional[List[str]] = None,
-    temperature: float = 0.2,
-    max_tokens: int = 800,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
 ) -> str:
+    """调用配置中的多模态模型；保留函数名以兼容现有调用方。"""
     api_key = _require_key()
     content: List[Dict[str, Any]] = []
     for p in image_paths or []:
@@ -200,14 +201,19 @@ def call_qwen_vl(
             content.append({"type": "image_url", "image_url": {"url": image_to_base64_url(p)}})
     content.append({"type": "text", "text": prompt})
 
-    # qwen3.8-omni-flash：仅支持文本输出；模态在消息 content 中传入
     payload = {
-        "model": acfg.ALIYUN_VL_MODEL,
+        "model": acfg.VL_MODEL,
         "messages": [{"role": "user", "content": content}],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "modalities": ["text"],
+        "max_tokens": max_tokens if max_tokens is not None else acfg.VL_MAX_TOKENS,
+        "stream": False,
     }
+    resolved_temperature = temperature if temperature is not None else acfg.VL_TEMPERATURE
+    if resolved_temperature is not None:
+        payload["temperature"] = resolved_temperature
+    if acfg.VL_MODALITIES:
+        payload["modalities"] = acfg.VL_MODALITIES
+    if acfg.VL_THINKING:
+        payload["thinking"] = {"type": acfg.VL_THINKING}
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -224,11 +230,16 @@ def call_qwen_vl(
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=acfg.ALIYUN_TIMEOUT_SEC) as resp:
+            with urllib.request.urlopen(req, timeout=acfg.VL_TIMEOUT_SEC) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             choices = data.get("choices") or []
             if not choices:
                 raise AliyunVLError(f"模型返回为空: {str(data)[:300]}")
+            if choices[0].get("finish_reason") == "length":
+                raise AliyunVLError(
+                    "模型输出达到 token 上限，无法确认编码结果完整。"
+                    "请增大 VL_MAX_TOKENS，或在支持时配置 VL_THINKING=disabled。"
+                )
             message = choices[0].get("message") or {}
             text = message.get("content") or ""
             if isinstance(text, list):
@@ -236,7 +247,9 @@ def call_qwen_vl(
                     (part.get("text") or "") if isinstance(part, dict) else str(part)
                     for part in text
                 )
-            return text
+            if not text.strip():
+                raise AliyunVLError("模型未返回最终文本 content，请检查思考模式和 VL_MAX_TOKENS")
+            return text.strip()
         except urllib.error.HTTPError as e:
             err_body = ""
             try:
@@ -268,7 +281,7 @@ def code_segment(
     context_next: str = "",
     n_frames: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """对单个编码单元调用 Qwen-VL，返回规范化双维编码。"""
+    """对单个编码单元调用配置中的多模态模型，返回规范化双维编码。"""
     # 高精度：默认按时长自适应 4/8/12 帧；n_frames 可强制覆盖
     if n_frames is None:
         if acfg.DUAL_FRAMES_MODE == "fixed" and acfg.DUAL_FRAMES_PER_UNIT:
@@ -314,7 +327,7 @@ def code_segment(
         emotion_code=str(parsed.get("emotion_code") or ""),
         behavior_reason=str(parsed.get("behavior_reason") or ""),
         emotion_evidence=str(parsed.get("emotion_evidence") or ""),
-        confidence=float(parsed.get("confidence") or 0.0),
+        confidence=parsed.get("confidence") or 0.0,
         needs_review=parsed.get("needs_review"),
         confidence_threshold=acfg.DUAL_CONFIDENCE_THRESHOLD,
     )

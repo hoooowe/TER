@@ -1,5 +1,5 @@
 # 教室情感识别（双维编码）后端依赖
-# 仅教学情绪-行为双维自动编码：通义 ASR + Qwen-VL + Excel 导出
+# 仅教学情绪-行为双维自动编码：通义 ASR + OpenAI 兼容视觉模型 + Excel 导出
 
 fastapi>=0.110
 uvicorn>=0.27
